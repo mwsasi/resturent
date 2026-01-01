@@ -17,8 +17,7 @@ export async function getChefRecommendation(menuItems: string[]): Promise<string
 
 export async function generateDishImage(
   itemName: string, 
-  description: string, 
-  imageSize: "1K" | "2K" | "4K" = "1K"
+  description: string
 ): Promise<string | null> {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -26,14 +25,13 @@ export async function generateDishImage(
     Soft studio lighting, shallow depth of field, plated beautifully on a ceramic dish, professional styling, appetizing.`;
     
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
+      model: 'gemini-2.5-flash-image',
       contents: {
         parts: [{ text: prompt }],
       },
       config: {
         imageConfig: {
-          aspectRatio: "1:1",
-          imageSize: imageSize
+          aspectRatio: "1:1"
         }
       }
     });
@@ -46,7 +44,6 @@ export async function generateDishImage(
     return null;
   } catch (error) {
     console.error("Image Generation Error:", error);
-    // Fallback to flash if pro fails or key is missing, or return null to trigger UI warning
     return null;
   }
 }

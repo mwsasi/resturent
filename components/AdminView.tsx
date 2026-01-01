@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { MenuItem } from '../types';
+import React, { useState } from 'react';
+import { MenuItem, ItemVariation } from '../types';
 import { generateDishImage } from '../services/gemini';
 
 interface AdminViewProps {
@@ -12,33 +12,25 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(false);
-  const [imageSize, setImageSize] = useState<"1K" | "2K" | "4K">("1K");
+  const [adminMode, setAdminMode] = useState<'menu' | 'inventory'>('menu');
+  const [hasVariations, setHasVariations] = useState(false);
+  
+  // State for manual restock inputs
+  const [manualInputs, setManualInputs] = useState<Record<string, string>>({});
 
   const initialFormState: Omit<MenuItem, 'id'> = {
     name: '',
     price: 0,
     category: 'Breakfast',
     image: '',
-    description: ''
+    description: '',
+    stock: 0,
+    minStock: 5,
+    variations: [],
+    piecesPerSet: 1
   };
 
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialFormState);
-
-  useEffect(() => {
-    const checkKey = async () => {
-      // @ts-ignore - aistudio is provided by the execution environment
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      setHasApiKey(hasKey);
-    };
-    checkKey();
-  }, []);
-
-  const handleSelectKey = async () => {
-    // @ts-ignore - aistudio is provided by the execution environment
-    await window.aistudio.openSelectKey();
-    setHasApiKey(true);
-  };
 
   const handleEdit = (item: MenuItem) => {
     setEditingItem(item);
@@ -47,51 +39,89 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
       price: item.price,
       category: item.category,
       image: item.image,
-      description: item.description
+      description: item.description,
+      stock: item.stock,
+      minStock: item.minStock || 5,
+      variations: item.variations || [],
+      piecesPerSet: item.piecesPerSet || 1
     });
+    setHasVariations(!!item.variations && item.variations.length > 0);
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this item?')) {
-      setMenu(menu.filter(i => i.id !== id));
-    }
+  const addVariation = () => {
+    const newVariation: ItemVariation = {
+      id: Date.now().toString() + Math.random(),
+      label: '',
+      price: 0,
+      stock: 0
+    };
+    setFormData(prev => ({
+      ...prev,
+      variations: [...(prev.variations || []), newVariation]
+    }));
   };
 
-  const handleAiGenerateImage = async () => {
-    if (!hasApiKey) {
-      alert("Please connect your Google AI Studio API Key first to use High Quality Image Generation.");
-      await handleSelectKey();
-      return;
-    }
-    if (!formData.name) {
-      alert("Please enter an item name first so the AI knows what to generate.");
-      return;
-    }
-    setIsGeneratingImage(true);
-    try {
-      const generatedUrl = await generateDishImage(formData.name, formData.description, imageSize);
-      if (generatedUrl) {
-        setFormData(prev => ({ ...prev, image: generatedUrl }));
-      } else {
-        alert("Failed to generate image. Please ensure you have a valid paid project key and try again.");
+  const removeVariation = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      variations: prev.variations?.filter(v => v.id !== id)
+    }));
+  };
+
+  const updateVariation = (id: string, field: keyof ItemVariation, value: string | number) => {
+    setFormData(prev => ({
+      ...prev,
+      variations: prev.variations?.map(v => v.id === id ? { ...v, [field]: value } : v)
+    }));
+  };
+
+  const handleQuickRestock = (id: string, amount: number, variationId?: string) => {
+    setMenu(menu.map(item => {
+      if (item.id === id) {
+        if (item.variations && item.variations.length > 0) {
+           return {
+             ...item,
+             variations: item.variations.map(v => {
+               if (variationId && v.id !== variationId) return v;
+               return { ...v, stock: Math.max(0, v.stock + amount) };
+             })
+           };
+        }
+        return { ...item, stock: Math.max(0, item.stock + amount) };
       }
-    } catch (err) {
-      console.error(err);
-      alert("An error occurred during generation.");
-    } finally {
-      setIsGeneratingImage(false);
-    }
+      return item;
+    }));
+  };
+
+  const handleManualInput = (key: string, value: string) => {
+    setManualInputs(prev => ({ ...prev, [key]: value }));
+  };
+
+  const applyManualRestock = (itemId: string, direction: 'add' | 'sub', variationId?: string) => {
+    const key = variationId ? `${itemId}-${variationId}` : itemId;
+    const amount = parseInt(manualInputs[key]);
+    if (isNaN(amount) || amount <= 0) return;
+    
+    handleQuickRestock(itemId, direction === 'add' ? amount : -amount, variationId);
+    setManualInputs(prev => ({ ...prev, [key]: '' })); // Clear input after use
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const finalData = { ...formData };
+    if (!hasVariations) {
+      finalData.variations = [];
+    } else {
+      finalData.price = Math.min(...(finalData.variations?.map(v => v.price) || [0]));
+    }
+
     if (editingItem) {
-      setMenu(menu.map(i => i.id === editingItem.id ? { ...editingItem, ...formData } : i));
+      setMenu(menu.map(i => i.id === editingItem.id ? { ...editingItem, ...finalData } : i));
     } else {
       const newItem: MenuItem = {
         id: Date.now().toString(),
-        ...formData
+        ...finalData
       };
       setMenu([...menu, newItem]);
     }
@@ -103,133 +133,158 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
   const openAddModal = () => {
     setEditingItem(null);
     setFormData(initialFormState);
+    setHasVariations(false);
     setIsModalOpen(true);
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto h-full overflow-y-auto">
+    <div className="p-6 max-w-6xl mx-auto h-full overflow-y-auto pb-24">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Menu Management</h2>
-          <p className="text-slate-500 text-sm">Design your menu with Gemini 3 Pro high-resolution photography.</p>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Admin Dashboard</h2>
+          <p className="text-slate-500 text-sm">Manage menu items, sizes, and tracking.</p>
         </div>
-        <div className="flex items-center gap-2">
-          {!hasApiKey ? (
-            <button 
-              onClick={handleSelectKey}
-              className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-indigo-200 hover:bg-indigo-200 transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-              </svg>
-              Connect AI Studio Key
-            </button>
-          ) : (
-            <div className="bg-green-100 text-green-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-green-200">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              AI Studio Active
-              <button onClick={handleSelectKey} className="ml-2 text-green-800 underline hover:no-underline">Change</button>
-            </div>
-          )}
-          <button 
-            onClick={openAddModal}
-            className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg shadow-orange-100 hover:bg-orange-700 transition-colors flex items-center gap-2"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
-            Add New Item
-          </button>
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-200 p-1 rounded-xl">
+             <button onClick={() => setAdminMode('menu')} className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${adminMode === 'menu' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Edit Menu</button>
+             <button onClick={() => setAdminMode('inventory')} className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${adminMode === 'inventory' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Quick Restock</button>
+          </div>
+          <button onClick={openAddModal} className="bg-orange-600 text-white px-4 py-2.5 rounded-xl font-black text-xs shadow-lg shadow-orange-100 hover:bg-orange-700 transition-all">New Dish</button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b border-slate-200">
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+        <table className="w-full text-left border-collapse">
+          <thead className="bg-slate-50 border-b">
             <tr>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Item</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Price</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+              <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Dish Information</th>
+              <th className={`px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest ${adminMode === 'inventory' ? 'text-left' : 'text-center'}`}>
+                {adminMode === 'inventory' ? 'Inventory Control Center' : 'Stock Details'}
+              </th>
+              {adminMode === 'menu' && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Pricing</th>}
+              {adminMode === 'menu' && <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {menu.map(item => (
-              <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
-                      {item.image ? (
-                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-xs font-bold text-slate-400">{item.name[0]}</span>
-                      )}
+            {menu.map(item => {
+              const hasSizes = item.variations && item.variations.length > 0;
+              return (
+                <tr key={item.id} className="hover:bg-slate-50/50 group transition-colors">
+                  <td className="px-8 py-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200 shadow-sm">
+                        {item.image ? <img src={item.image} className="w-full h-full object-cover" alt="" /> : <span className="font-black text-slate-300">{item.name[0]}</span>}
+                      </div>
+                      <div>
+                        <p className="font-black text-slate-800 text-sm mb-1">{item.name}</p>
+                        <div className="flex items-center gap-2">
+                           <span className="text-[8px] font-black text-slate-400 uppercase bg-slate-100 px-2 py-0.5 rounded tracking-widest">{item.category}</span>
+                           {item.piecesPerSet && item.piecesPerSet > 1 && (
+                             <span className="text-[8px] font-black text-orange-600 uppercase bg-orange-50 px-2 py-0.5 rounded tracking-widest">Set of {item.piecesPerSet}</span>
+                           )}
+                           {hasSizes && <span className="text-[8px] font-black text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded tracking-widest">{item.variations?.length} Sizes</span>}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-slate-800">{item.name}</p>
-                      <p className="text-xs text-slate-500 line-clamp-1 max-w-xs">{item.description}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">
-                    {item.category}
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-bold text-orange-600">₹{item.price}</td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleEdit(item)} className="p-2 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button onClick={() => handleDelete(item.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+
+                  <td className="px-8 py-6">
+                    {adminMode === 'inventory' ? (
+                      <div className="space-y-4">
+                        {hasSizes ? (
+                          item.variations?.map(v => (
+                            <div key={v.id} className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                              <div className="min-w-[80px]">
+                                <span className="text-[9px] font-black text-slate-400 uppercase block leading-none mb-1">{v.label}</span>
+                                <span className={`text-xs font-black ${v.stock <= 5 ? 'text-red-500' : 'text-green-600'}`}>{v.stock} in stock</span>
+                              </div>
+                              <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-orange-100 focus-within:border-orange-500 transition-all">
+                                <input type="number" placeholder="0" value={manualInputs[`${item.id}-${v.id}`] || ''} onChange={(e) => handleManualInput(`${item.id}-${v.id}`, e.target.value)} className="w-16 px-3 py-1.5 text-xs font-black outline-none bg-transparent" />
+                                <div className="flex border-l border-slate-100">
+                                  <button onClick={() => applyManualRestock(item.id, 'add', v.id)} className="px-3 py-1.5 hover:bg-green-50 text-green-600 font-black text-xs border-r border-slate-100">+</button>
+                                  <button onClick={() => applyManualRestock(item.id, 'sub', v.id)} className="px-3 py-1.5 hover:bg-red-50 text-red-600 font-black text-xs">-</button>
+                                </div>
+                              </div>
+                              <div className="flex gap-1 ml-auto">
+                                <button onClick={() => handleQuickRestock(item.id, 10, v.id)} className="text-[9px] font-black bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50">+10</button>
+                                <button onClick={() => handleQuickRestock(item.id, 50, v.id)} className="text-[9px] font-black bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-black">+50</button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-4">
+                            <div className="bg-slate-50 px-4 py-2 rounded-xl border border-slate-100 min-w-[100px]">
+                              <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">Current Stock</span>
+                              <span className={`text-sm font-black ${item.stock <= 5 ? 'text-red-500' : 'text-slate-800'}`}>{item.stock} Units</span>
+                            </div>
+                            <div className="flex items-center bg-white border-2 border-slate-200 rounded-2xl overflow-hidden focus-within:ring-4 focus-within:ring-orange-100 focus-within:border-orange-500 transition-all shadow-sm">
+                              <input type="number" placeholder="Manual qty" value={manualInputs[item.id] || ''} onChange={(e) => handleManualInput(item.id, e.target.value)} className="w-24 px-4 py-2 text-sm font-black outline-none bg-transparent" />
+                              <div className="flex border-l-2 border-slate-200 h-full">
+                                <button onClick={() => applyManualRestock(item.id, 'add')} className="px-5 py-2 hover:bg-green-50 text-green-600 font-black text-sm border-r-2 border-slate-200">ADD</button>
+                                <button onClick={() => applyManualRestock(item.id, 'sub')} className="px-5 py-2 hover:bg-red-50 text-red-600 font-black text-sm tracking-tighter">MINUS</button>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 ml-auto">
+                               <button onClick={() => handleQuickRestock(item.id, 10)} className="bg-white border-2 border-slate-100 px-5 py-2.5 rounded-xl text-[10px] font-black text-slate-600 hover:border-slate-900 hover:text-slate-900 transition-all">+10 Quick</button>
+                               <button onClick={() => handleQuickRestock(item.id, 50)} className="bg-green-600 px-5 py-2.5 rounded-xl text-[10px] font-black text-white hover:bg-green-700 shadow-md shadow-green-100 transition-all">+50 Quick</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex justify-center">
+                        {hasSizes ? (
+                          <div className="flex flex-col gap-1 items-center">
+                            {item.variations?.map(v => (
+                              <span key={v.id} className="text-[9px] font-bold text-slate-500 whitespace-nowrap">
+                                {v.label}: <span className={v.stock <= 5 ? 'text-red-500' : 'text-green-600'}>{v.stock}</span>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className={`px-4 py-2 rounded-xl font-black text-xs ${item.stock <= 5 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                            {item.stock} Units
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </td>
+
+                  {adminMode === 'menu' && (
+                    <td className="px-8 py-6 font-black text-orange-600 text-sm">
+                      {hasSizes ? `from ₹${item.price}` : `₹${item.price}`}
+                    </td>
+                  )}
+
+                  {adminMode === 'menu' && (
+                    <td className="px-8 py-6">
+                      <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => handleEdit(item)} className="p-3 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-2xl transition-all active:scale-90">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl overflow-y-auto max-h-[90vh]">
-            <h3 className="text-xl font-bold text-slate-800 mb-6">{editingItem ? 'Edit Dish' : 'Add New Dish'}</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Item Name</label>
-                <input 
-                  required
-                  type="text" 
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500 outline-none" 
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[60] p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[3rem] p-10 max-w-2xl w-full shadow-2xl overflow-y-auto max-h-[90vh] animate-in zoom-in-95 duration-300">
+            <h3 className="text-2xl font-black text-slate-900 tracking-tighter mb-8">Dish Settings</h3>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Price (₹)</label>
-                  <input 
-                    required
-                    type="number" 
-                    value={formData.price}
-                    onChange={e => setFormData({ ...formData, price: Number(e.target.value) })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500 outline-none" 
-                  />
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Item Name</label>
+                  <input required type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
-                  <select 
-                    value={formData.category}
-                    onChange={e => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500 outline-none"
-                  >
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Category</label>
+                  <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all">
                     <option value="Breakfast">Breakfast</option>
                     <option value="Lunch">Lunch</option>
                     <option value="Dinner">Dinner</option>
@@ -237,84 +292,68 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
-                <textarea 
-                  rows={2}
-                  value={formData.description}
-                  onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500 outline-none"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">High Quality Image Generation</label>
-                <div className="flex flex-col gap-3">
-                  <div className="flex gap-2 p-1 bg-slate-100 rounded-lg self-start">
-                    {(['1K', '2K', '4K'] as const).map((size) => (
-                      <button
-                        key={size}
-                        type="button"
-                        onClick={() => setImageSize(size)}
-                        className={`px-3 py-1 rounded-md text-[10px] font-black transition-all ${imageSize === size ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                      >
-                        {size}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 min-h-[120px] flex items-center justify-center relative overflow-hidden group">
-                      {formData.image ? (
-                        <img src={formData.image} className="absolute inset-0 w-full h-full object-cover" alt="Preview" />
-                      ) : (
-                        <div className="text-center px-4">
-                          <p className="text-xs text-slate-400 italic mb-2">High Quality AI Photographer</p>
-                          <p className="text-[10px] text-slate-300">Requires a Paid Google AI Studio Key</p>
-                        </div>
-                      )}
-                      {isGeneratingImage && (
-                        <div className="absolute inset-0 bg-indigo-900/60 backdrop-blur-sm flex flex-col items-center justify-center text-white">
-                          <div className="w-8 h-8 border-4 border-indigo-400 border-t-white rounded-full animate-spin mb-3"></div>
-                          <span className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Gemini 3 Pro Rendering...</span>
-                          <span className="text-[8px] opacity-60 mt-1 italic">Generating {imageSize} Masterpiece</span>
-                        </div>
-                      )}
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={handleAiGenerateImage}
-                      disabled={isGeneratingImage}
-                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-xs flex flex-col items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-50 transition-all shrink-0 w-24"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <span>Generate {imageSize}</span>
-                    </button>
-                  </div>
-                  <div className="text-[9px] text-slate-400 leading-tight">
-                    * Make sure your AI Studio key is connected. High-res images can take 10-20 seconds to render.
-                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="ml-1 text-indigo-500 underline">Billing Info</a>
-                  </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pieces per Set</label>
+                  <input type="number" value={formData.piecesPerSet} onChange={e => setFormData({ ...formData, piecesPerSet: Number(e.target.value) })} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all" min="1" />
                 </div>
-                <input 
-                  type="text" 
-                  placeholder="Or paste an image URL"
-                  value={formData.image.startsWith('data:') ? `AI ${imageSize} Generated Image` : formData.image}
-                  onChange={e => setFormData({ ...formData, image: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 mt-3 focus:ring-2 focus:ring-orange-500 outline-none text-[10px]" 
-                />
               </div>
 
-              <div className="flex gap-3 pt-4">
-                <button type="submit" className="flex-1 bg-orange-600 text-white font-bold py-3 rounded-xl hover:bg-orange-700">
-                  {editingItem ? 'Save Changes' : 'Create Item'}
-                </button>
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-3 font-semibold text-slate-500 hover:bg-slate-50 rounded-xl">
-                  Cancel
-                </button>
+              <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-200">
+                <div className="flex items-center justify-between mb-4">
+                   <h4 className="text-xs font-black uppercase tracking-widest">Price & Volume Options</h4>
+                   <div className="flex bg-white p-1 rounded-xl shadow-inner border">
+                      <button type="button" onClick={() => setHasVariations(false)} className={`px-4 py-2 rounded-lg text-[9px] font-black transition-all ${!hasVariations ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>Single Price</button>
+                      <button type="button" onClick={() => setHasVariations(true)} className={`px-4 py-2 rounded-lg text-[9px] font-black transition-all ${hasVariations ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>Multiple Sizes/ML</button>
+                   </div>
+                </div>
+
+                {!hasVariations ? (
+                  <div className="grid grid-cols-2 gap-4 animate-in fade-in">
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-400 mb-1 uppercase">Price (₹)</label>
+                      <input type="number" value={formData.price} onChange={e => setFormData({ ...formData, price: Number(e.target.value) })} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold" />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black text-slate-400 mb-1 uppercase">Base Stock</label>
+                      <input type="number" value={formData.stock} onChange={e => setFormData({ ...formData, stock: Number(e.target.value) })} className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 animate-in fade-in">
+                    {formData.variations?.map((v) => (
+                      <div key={v.id} className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-4">
+                           <label className="text-[8px] font-black uppercase text-slate-400 block mb-1">Label</label>
+                           <input type="text" value={v.label} onChange={e => updateVariation(v.id, 'label', e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold" placeholder="Size/Unit" />
+                        </div>
+                        <div className="col-span-3">
+                           <label className="text-[8px] font-black uppercase text-slate-400 block mb-1">Price</label>
+                           <input type="number" value={v.price} onChange={e => updateVariation(v.id, 'price', Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold" />
+                        </div>
+                        <div className="col-span-3">
+                           <label className="text-[8px] font-black uppercase text-slate-400 block mb-1">Stock</label>
+                           <input type="number" value={v.stock} onChange={e => updateVariation(v.id, 'stock', Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold" />
+                        </div>
+                        <div className="col-span-2">
+                           <button type="button" onClick={() => removeVariation(v.id)} className="w-full bg-red-50 text-red-500 py-2 rounded-xl text-xs font-bold hover:bg-red-100">X</button>
+                        </div>
+                      </div>
+                    ))}
+                    <button type="button" onClick={addVariation} className="w-full py-3 border-2 border-dashed border-slate-300 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-slate-100 transition-colors mt-2">+ Add Size Variation</button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Description</label>
+                <textarea rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3.5 text-sm font-bold resize-none focus:bg-white focus:border-orange-500 outline-none transition-all" placeholder="Describe the flavors..." />
+              </div>
+              
+              <div className="flex gap-4 pt-4">
+                <button type="submit" className="flex-1 bg-orange-600 text-white font-black py-5 rounded-[1.5rem] shadow-xl text-sm uppercase tracking-widest hover:-translate-y-1 transition-all">Confirm Dish</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-8 py-5 font-black text-slate-500 hover:bg-slate-50 rounded-[1.5rem] text-sm uppercase tracking-widest">Discard</button>
               </div>
             </form>
           </div>

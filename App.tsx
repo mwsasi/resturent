@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { ViewState, MenuItem, Order, CartItem } from './types';
+import React, { useState, useEffect } from 'react';
+import { ViewState, MenuItem, Order, CartItem, ItemVariation } from './types';
 import { INITIAL_MENU } from './constants';
 import POSView from './components/POSView';
 import AdminView from './components/AdminView';
@@ -27,25 +27,80 @@ const App: React.FC = () => {
     localStorage.setItem('spice_route_orders', JSON.stringify(orders));
   }, [orders]);
 
-  const addToCart = (item: MenuItem) => {
-    setCart(prev => {
-      const existing = prev.find(i => i.id === item.id);
-      if (existing) {
-        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+  const updateInventory = (itemsToDecrement: CartItem[]) => {
+    setMenu(prevMenu => prevMenu.map(menuItem => {
+      const soldItems = itemsToDecrement.filter(i => i.id === menuItem.id);
+      if (soldItems.length > 0) {
+        let updatedItem = { ...menuItem };
+        
+        soldItems.forEach(sold => {
+          if (sold.selectedVariation && updatedItem.variations) {
+            updatedItem.variations = updatedItem.variations.map(v => 
+              v.id === sold.selectedVariation?.id 
+                ? { ...v, stock: Math.max(0, v.stock - sold.quantity) }
+                : v
+            );
+          } else {
+            updatedItem.stock = Math.max(0, updatedItem.stock - sold.quantity);
+          }
+        });
+        
+        return updatedItem;
       }
-      return [...prev, { ...item, quantity: 1 }];
+      return menuItem;
+    }));
+  };
+
+  const addToCart = (item: MenuItem, variation?: ItemVariation) => {
+    // Unique ID for cart item combines dish ID and variation ID
+    const cartKey = variation ? `${item.id}-${variation.id}` : item.id;
+    const existingInCart = cart.find(i => 
+      variation 
+        ? (i.id === item.id && i.selectedVariation?.id === variation.id)
+        : (i.id === item.id && !i.selectedVariation)
+    );
+
+    const currentQtyInCart = existingInCart ? existingInCart.quantity : 0;
+    const availableStock = variation ? variation.stock : item.stock;
+    
+    if (currentQtyInCart >= availableStock) {
+      alert(`Sorry, stock limit reached for ${item.name}${variation ? ` (${variation.label})` : ''}.`);
+      return;
+    }
+
+    setCart(prev => {
+      if (existingInCart) {
+        return prev.map(i => {
+          const isMatch = variation 
+            ? (i.id === item.id && i.selectedVariation?.id === variation.id)
+            : (i.id === item.id && !i.selectedVariation);
+          return isMatch ? { ...i, quantity: i.quantity + 1 } : i;
+        });
+      }
+      return [...prev, { ...item, quantity: 1, selectedVariation: variation }];
     });
   };
 
-  const removeFromCart = (id: string) => {
-    setCart(prev => prev.filter(i => i.id !== id));
+  const removeFromCart = (cartKey: string) => {
+    setCart(prev => prev.filter((_, idx) => {
+      const item = prev[idx];
+      const currentKey = item.selectedVariation ? `${item.id}-${item.selectedVariation.id}` : item.id;
+      return currentKey !== cartKey;
+    }));
   };
 
-  const updateQuantity = (id: string, delta: number) => {
+  const updateQuantity = (cartKey: string, delta: number) => {
     setCart(prev => prev.map(i => {
-      if (i.id === id) {
-        const newQty = Math.max(1, i.quantity + delta);
-        return { ...i, quantity: newQty };
+      const currentKey = i.selectedVariation ? `${i.id}-${i.selectedVariation.id}` : i.id;
+      if (currentKey === cartKey) {
+        const menuItem = menu.find(m => m.id === i.id);
+        const availableStock = i.selectedVariation ? i.selectedVariation.stock : (menuItem?.stock || 0);
+        
+        if (delta > 0 && i.quantity >= availableStock) {
+          alert(`Stock limit reached.`);
+          return i;
+        }
+        return { ...i, quantity: Math.max(1, i.quantity + delta) };
       }
       return i;
     }));
@@ -56,7 +111,10 @@ const App: React.FC = () => {
   const completeOrder = (type: 'dine-in' | 'takeaway', tableNumber?: string) => {
     if (cart.length === 0) return;
     
-    const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const subtotal = cart.reduce((acc, item) => {
+      const price = item.selectedVariation ? item.selectedVariation.price : item.price;
+      return acc + (price * item.quantity);
+    }, 0);
     
     const newOrder: Order = {
       id: `ORD-${Date.now()}`,
@@ -70,6 +128,7 @@ const App: React.FC = () => {
       tableNumber: tableNumber
     };
 
+    updateInventory(cart);
     setOrders(prev => [newOrder, ...prev]);
     clearCart();
     return newOrder;
@@ -83,7 +142,12 @@ const App: React.FC = () => {
         const updatedItems = [...order.items];
         
         cart.forEach(newItem => {
-          const existingIndex = updatedItems.findIndex(i => i.id === newItem.id);
+          const existingIndex = updatedItems.findIndex(i => 
+            newItem.selectedVariation 
+              ? (i.id === newItem.id && i.selectedVariation?.id === newItem.selectedVariation.id)
+              : (i.id === newItem.id && !i.selectedVariation)
+          );
+          
           if (existingIndex > -1) {
             updatedItems[existingIndex] = {
               ...updatedItems[existingIndex],
@@ -94,7 +158,10 @@ const App: React.FC = () => {
           }
         });
 
-        const newSubtotal = updatedItems.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+        const newSubtotal = updatedItems.reduce((acc, i) => {
+          const price = i.selectedVariation ? i.selectedVariation.price : i.price;
+          return acc + (price * i.quantity);
+        }, 0);
         
         return {
           ...order,
@@ -106,9 +173,9 @@ const App: React.FC = () => {
       return order;
     }));
     
-    const updatedOrder = orders.find(o => o.id === orderId);
+    updateInventory(cart);
     clearCart();
-    return updatedOrder;
+    return orders.find(o => o.id === orderId);
   };
 
   const updateOrderStatus = (orderId: string, status: Order['status'], paymentMethod?: Order['paymentMethod']) => {

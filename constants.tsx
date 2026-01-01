@@ -8,7 +8,9 @@ export const INITIAL_MENU: MenuItem[] = [
     price: 40,
     category: 'Breakfast',
     image: '',
-    description: 'Soft and fluffy steamed rice cakes served with sambar and chutney.'
+    description: 'Soft and fluffy steamed rice cakes served with sambar and chutney.',
+    stock: 50,
+    piecesPerSet: 3
   },
   {
     id: '2',
@@ -16,7 +18,9 @@ export const INITIAL_MENU: MenuItem[] = [
     price: 60,
     category: 'Breakfast',
     image: '',
-    description: 'Steamed cylinders of ground rice layered with coconut.'
+    description: 'Steamed cylinders of ground rice layered with coconut.',
+    stock: 30,
+    piecesPerSet: 2
   },
   {
     id: '3',
@@ -24,7 +28,9 @@ export const INITIAL_MENU: MenuItem[] = [
     price: 50,
     category: 'Breakfast',
     image: '',
-    description: 'Deep-fried bread served with potato masala.'
+    description: 'Deep-fried bread served with potato masala.',
+    stock: 25,
+    piecesPerSet: 2
   },
   {
     id: '4',
@@ -32,7 +38,8 @@ export const INITIAL_MENU: MenuItem[] = [
     price: 25,
     category: 'Beverage',
     image: '',
-    description: 'Traditional south Indian aromatic filter coffee.'
+    description: 'Traditional south Indian aromatic filter coffee.',
+    stock: 100
   },
   {
     id: '5',
@@ -40,7 +47,8 @@ export const INITIAL_MENU: MenuItem[] = [
     price: 70,
     category: 'Breakfast',
     image: '',
-    description: 'Crispy thin pancake made from fermented rice batter.'
+    description: 'Crispy thin pancake made from fermented rice batter.',
+    stock: 40
   },
   {
     id: '6',
@@ -48,6 +56,7 @@ export const INITIAL_MENU: MenuItem[] = [
     price: 45,
     category: 'Breakfast',
     image: '',
-    description: 'Savory fried donut-shaped fritters made from urad dal.'
+    description: 'Savory fried donut-shaped fritters made from urad dal.',
+    stock: 35
   }
 ];
