@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MenuItem } from '../types';
 import { generateDishImage } from '../services/gemini';
 
@@ -12,6 +12,8 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [imageSize, setImageSize] = useState<"1K" | "2K" | "4K">("1K");
 
   const initialFormState: Omit<MenuItem, 'id'> = {
     name: '',
@@ -22,6 +24,21 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
   };
 
   const [formData, setFormData] = useState<Omit<MenuItem, 'id'>>(initialFormState);
+
+  useEffect(() => {
+    const checkKey = async () => {
+      // @ts-ignore - aistudio is provided by the execution environment
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      setHasApiKey(hasKey);
+    };
+    checkKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+    // @ts-ignore - aistudio is provided by the execution environment
+    await window.aistudio.openSelectKey();
+    setHasApiKey(true);
+  };
 
   const handleEdit = (item: MenuItem) => {
     setEditingItem(item);
@@ -42,18 +59,29 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
   };
 
   const handleAiGenerateImage = async () => {
+    if (!hasApiKey) {
+      alert("Please connect your Google AI Studio API Key first to use High Quality Image Generation.");
+      await handleSelectKey();
+      return;
+    }
     if (!formData.name) {
       alert("Please enter an item name first so the AI knows what to generate.");
       return;
     }
     setIsGeneratingImage(true);
-    const generatedUrl = await generateDishImage(formData.name, formData.description);
-    if (generatedUrl) {
-      setFormData(prev => ({ ...prev, image: generatedUrl }));
-    } else {
-      alert("Failed to generate image. Please try again.");
+    try {
+      const generatedUrl = await generateDishImage(formData.name, formData.description, imageSize);
+      if (generatedUrl) {
+        setFormData(prev => ({ ...prev, image: generatedUrl }));
+      } else {
+        alert("Failed to generate image. Please ensure you have a valid paid project key and try again.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred during generation.");
+    } finally {
+      setIsGeneratingImage(false);
     }
-    setIsGeneratingImage(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -80,20 +108,39 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
 
   return (
     <div className="p-6 max-w-6xl mx-auto h-full overflow-y-auto">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Menu Management</h2>
-          <p className="text-slate-500 text-sm">Design your menu with AI-powered professional photography.</p>
+          <p className="text-slate-500 text-sm">Design your menu with Gemini 3 Pro high-resolution photography.</p>
         </div>
-        <button 
-          onClick={openAddModal}
-          className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg shadow-orange-100 hover:bg-orange-700 transition-colors flex items-center gap-2"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-          </svg>
-          Add New Item
-        </button>
+        <div className="flex items-center gap-2">
+          {!hasApiKey ? (
+            <button 
+              onClick={handleSelectKey}
+              className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-indigo-200 hover:bg-indigo-200 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              Connect AI Studio Key
+            </button>
+          ) : (
+            <div className="bg-green-100 text-green-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-green-200">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              AI Studio Active
+              <button onClick={handleSelectKey} className="ml-2 text-green-800 underline hover:no-underline">Change</button>
+            </div>
+          )}
+          <button 
+            onClick={openAddModal}
+            className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg shadow-orange-100 hover:bg-orange-700 transition-colors flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+            Add New Item
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -152,7 +199,7 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl overflow-y-auto max-h-[90vh]">
             <h3 className="text-xl font-bold text-slate-800 mb-6">{editingItem ? 'Edit Dish' : 'Add New Dish'}</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -199,40 +246,65 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500 outline-none"
                 />
               </div>
+              
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dish Image</label>
-                <div className="flex gap-2">
-                  <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 min-h-[100px] flex items-center justify-center relative overflow-hidden group">
-                    {formData.image ? (
-                      <img src={formData.image} className="absolute inset-0 w-full h-full object-cover" alt="Preview" />
-                    ) : (
-                      <span className="text-xs text-slate-400 italic text-center px-4">Click "Auto-Generate" to create a professional photo using AI</span>
-                    )}
-                    {isGeneratingImage && (
-                      <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center">
-                        <div className="w-6 h-6 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-2"></div>
-                        <span className="text-[10px] font-bold text-orange-600 uppercase tracking-tighter">AI Designing...</span>
-                      </div>
-                    )}
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">High Quality Image Generation</label>
+                <div className="flex flex-col gap-3">
+                  <div className="flex gap-2 p-1 bg-slate-100 rounded-lg self-start">
+                    {(['1K', '2K', '4K'] as const).map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setImageSize(size)}
+                        className={`px-3 py-1 rounded-md text-[10px] font-black transition-all ${imageSize === size ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                        {size}
+                      </button>
+                    ))}
                   </div>
-                  <button 
-                    type="button"
-                    onClick={handleAiGenerateImage}
-                    disabled={isGeneratingImage}
-                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-xs flex flex-col items-center justify-center gap-1 hover:bg-indigo-700 disabled:opacity-50 transition-all shrink-0"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <span>Auto-Generate</span>
-                  </button>
+                  
+                  <div className="flex gap-2">
+                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 min-h-[120px] flex items-center justify-center relative overflow-hidden group">
+                      {formData.image ? (
+                        <img src={formData.image} className="absolute inset-0 w-full h-full object-cover" alt="Preview" />
+                      ) : (
+                        <div className="text-center px-4">
+                          <p className="text-xs text-slate-400 italic mb-2">High Quality AI Photographer</p>
+                          <p className="text-[10px] text-slate-300">Requires a Paid Google AI Studio Key</p>
+                        </div>
+                      )}
+                      {isGeneratingImage && (
+                        <div className="absolute inset-0 bg-indigo-900/60 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+                          <div className="w-8 h-8 border-4 border-indigo-400 border-t-white rounded-full animate-spin mb-3"></div>
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Gemini 3 Pro Rendering...</span>
+                          <span className="text-[8px] opacity-60 mt-1 italic">Generating {imageSize} Masterpiece</span>
+                        </div>
+                      )}
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={handleAiGenerateImage}
+                      disabled={isGeneratingImage}
+                      className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-xs flex flex-col items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-50 transition-all shrink-0 w-24"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span>Generate {imageSize}</span>
+                    </button>
+                  </div>
+                  <div className="text-[9px] text-slate-400 leading-tight">
+                    * Make sure your AI Studio key is connected. High-res images can take 10-20 seconds to render.
+                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="ml-1 text-indigo-500 underline">Billing Info</a>
+                  </div>
                 </div>
                 <input 
                   type="text" 
-                  placeholder="Or paste a URL here"
-                  value={formData.image.startsWith('data:') ? 'AI Generated Image (Base64)' : formData.image}
+                  placeholder="Or paste an image URL"
+                  value={formData.image.startsWith('data:') ? `AI ${imageSize} Generated Image` : formData.image}
                   onChange={e => setFormData({ ...formData, image: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 mt-2 focus:ring-2 focus:ring-orange-500 outline-none text-[10px]" 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 mt-3 focus:ring-2 focus:ring-orange-500 outline-none text-[10px]" 
                 />
               </div>
 

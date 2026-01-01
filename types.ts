@@ -19,7 +19,10 @@ export interface Order {
   tax: number;
   grandTotal: number;
   date: string; // ISO string
-  status: 'paid' | 'pending';
+  status: 'paid' | 'pending' | 'delivered';
+  type: 'dine-in' | 'takeaway';
+  tableNumber?: string;
+  paymentMethod?: 'cash' | 'qr';
 }
 
 export type ViewState = 'pos' | 'admin' | 'reports';

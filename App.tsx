@@ -53,25 +53,68 @@ const App: React.FC = () => {
 
   const clearCart = () => setCart([]);
 
-  const completeOrder = () => {
+  const completeOrder = (type: 'dine-in' | 'takeaway', tableNumber?: string) => {
     if (cart.length === 0) return;
     
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const tax = subtotal * 0.05; // 5% GST
     
     const newOrder: Order = {
       id: `ORD-${Date.now()}`,
       items: [...cart],
       total: subtotal,
-      tax: tax,
-      grandTotal: subtotal + tax,
+      tax: 0,
+      grandTotal: subtotal,
       date: new Date().toISOString(),
-      status: 'paid'
+      status: 'pending',
+      type: type,
+      tableNumber: tableNumber
     };
 
-    setOrders(prev => [...prev, newOrder]);
+    setOrders(prev => [newOrder, ...prev]);
     clearCart();
     return newOrder;
+  };
+
+  const appendItemsToOrder = (orderId: string) => {
+    if (cart.length === 0) return;
+
+    setOrders(prev => prev.map(order => {
+      if (order.id === orderId) {
+        const updatedItems = [...order.items];
+        
+        cart.forEach(newItem => {
+          const existingIndex = updatedItems.findIndex(i => i.id === newItem.id);
+          if (existingIndex > -1) {
+            updatedItems[existingIndex] = {
+              ...updatedItems[existingIndex],
+              quantity: updatedItems[existingIndex].quantity + newItem.quantity
+            };
+          } else {
+            updatedItems.push({ ...newItem });
+          }
+        });
+
+        const newSubtotal = updatedItems.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+        
+        return {
+          ...order,
+          items: updatedItems,
+          total: newSubtotal,
+          grandTotal: newSubtotal
+        };
+      }
+      return order;
+    }));
+    
+    const updatedOrder = orders.find(o => o.id === orderId);
+    clearCart();
+    return updatedOrder;
+  };
+
+  const updateOrderStatus = (orderId: string, status: Order['status'], paymentMethod?: Order['paymentMethod']) => {
+    setOrders(prev => prev.map(order => 
+      order.id === orderId ? { ...order, status, paymentMethod: paymentMethod || order.paymentMethod } : order
+    ));
   };
 
   const updateMenu = (newMenu: MenuItem[]) => setMenu(newMenu);
@@ -84,12 +127,15 @@ const App: React.FC = () => {
         {view === 'pos' && (
           <POSView 
             menu={menu} 
-            cart={cart} 
+            cart={cart}
+            orders={orders}
             addToCart={addToCart} 
             updateQuantity={updateQuantity}
             removeFromCart={removeFromCart}
             clearCart={clearCart}
             completeOrder={completeOrder}
+            appendItemsToOrder={appendItemsToOrder}
+            updateOrderStatus={updateOrderStatus}
           />
         )}
         {view === 'admin' && (

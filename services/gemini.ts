@@ -1,10 +1,9 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export async function getChefRecommendation(menuItems: string[]): Promise<string> {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Based on this restaurant menu: ${menuItems.join(", ")}, recommend one "Chef's Special" dish and write a catchy 1-sentence marketing pitch for it.`,
@@ -16,23 +15,25 @@ export async function getChefRecommendation(menuItems: string[]): Promise<string
   }
 }
 
-export async function generateDishImage(itemName: string, description: string): Promise<string | null> {
+export async function generateDishImage(
+  itemName: string, 
+  description: string, 
+  imageSize: "1K" | "2K" | "4K" = "1K"
+): Promise<string | null> {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `A professional, high-end commercial food photograph of ${itemName}. ${description}. 
-    Soft studio lighting, shallow depth of field, plated beautifully on a ceramic dish, 4k resolution, appetizing.`;
+    Soft studio lighting, shallow depth of field, plated beautifully on a ceramic dish, professional styling, appetizing.`;
     
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: 'gemini-3-pro-image-preview',
       contents: {
-        parts: [
-          {
-            text: prompt,
-          },
-        ],
+        parts: [{ text: prompt }],
       },
       config: {
         imageConfig: {
-          aspectRatio: "4:3"
+          aspectRatio: "1:1",
+          imageSize: imageSize
         }
       }
     });
@@ -45,44 +46,7 @@ export async function generateDishImage(itemName: string, description: string): 
     return null;
   } catch (error) {
     console.error("Image Generation Error:", error);
-    return null;
-  }
-}
-
-export async function analyzeTrafficPatterns(orderHistory: any[]) {
-  try {
-    const summary = orderHistory.map(o => ({
-      time: new Date(o.date).getHours(),
-      items: o.items.map((i: any) => i.name),
-      total: o.grandTotal
-    }));
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: `Analyze these restaurant orders: ${JSON.stringify(summary)}. 
-      Identify:
-      1. Peak Busy Hour (range)
-      2. Off-Peak Hour (range)
-      3. The "Fastest Moving Item" (highest volume)
-      4. A brief operational tip for the manager.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            peakHour: { type: Type.STRING },
-            offPeakHour: { type: Type.STRING },
-            fastestMovingItem: { type: Type.STRING },
-            managerTip: { type: Type.STRING }
-          },
-          required: ["peakHour", "offPeakHour", "fastestMovingItem", "managerTip"]
-        }
-      }
-    });
-
-    return JSON.parse(response.text || "{}");
-  } catch (error) {
-    console.error("Analysis Error:", error);
+    // Fallback to flash if pro fails or key is missing, or return null to trigger UI warning
     return null;
   }
 }
