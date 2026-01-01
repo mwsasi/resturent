@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { MenuItem } from '../types';
+import { generateDishImage } from '../services/gemini';
 
 interface AdminViewProps {
   menu: MenuItem[];
@@ -10,12 +11,13 @@ interface AdminViewProps {
 const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   const initialFormState: Omit<MenuItem, 'id'> = {
     name: '',
     price: 0,
     category: 'Breakfast',
-    image: 'https://picsum.photos/seed/new/400/300',
+    image: '',
     description: ''
   };
 
@@ -37,6 +39,21 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
     if (window.confirm('Are you sure you want to delete this item?')) {
       setMenu(menu.filter(i => i.id !== id));
     }
+  };
+
+  const handleAiGenerateImage = async () => {
+    if (!formData.name) {
+      alert("Please enter an item name first so the AI knows what to generate.");
+      return;
+    }
+    setIsGeneratingImage(true);
+    const generatedUrl = await generateDishImage(formData.name, formData.description);
+    if (generatedUrl) {
+      setFormData(prev => ({ ...prev, image: generatedUrl }));
+    } else {
+      alert("Failed to generate image. Please try again.");
+    }
+    setIsGeneratingImage(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -66,7 +83,7 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Menu Management</h2>
-          <p className="text-slate-500 text-sm">Add, update, or remove dishes from your restaurant menu.</p>
+          <p className="text-slate-500 text-sm">Design your menu with AI-powered professional photography.</p>
         </div>
         <button 
           onClick={openAddModal}
@@ -94,7 +111,13 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
               <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
-                    <img src={item.image} alt={item.name} className="w-10 h-10 rounded-lg object-cover" />
+                    <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+                      {item.image ? (
+                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-xs font-bold text-slate-400">{item.name[0]}</span>
+                      )}
+                    </div>
                     <div>
                       <p className="font-bold text-slate-800">{item.name}</p>
                       <p className="text-xs text-slate-500 line-clamp-1 max-w-xs">{item.description}</p>
@@ -177,12 +200,39 @@ const AdminView: React.FC<AdminViewProps> = ({ menu, setMenu }) => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Image URL</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dish Image</label>
+                <div className="flex gap-2">
+                  <div className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 min-h-[100px] flex items-center justify-center relative overflow-hidden group">
+                    {formData.image ? (
+                      <img src={formData.image} className="absolute inset-0 w-full h-full object-cover" alt="Preview" />
+                    ) : (
+                      <span className="text-xs text-slate-400 italic text-center px-4">Click "Auto-Generate" to create a professional photo using AI</span>
+                    )}
+                    {isGeneratingImage && (
+                      <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center">
+                        <div className="w-6 h-6 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                        <span className="text-[10px] font-bold text-orange-600 uppercase tracking-tighter">AI Designing...</span>
+                      </div>
+                    )}
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={handleAiGenerateImage}
+                    disabled={isGeneratingImage}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-xs flex flex-col items-center justify-center gap-1 hover:bg-indigo-700 disabled:opacity-50 transition-all shrink-0"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>Auto-Generate</span>
+                  </button>
+                </div>
                 <input 
                   type="text" 
-                  value={formData.image}
+                  placeholder="Or paste a URL here"
+                  value={formData.image.startsWith('data:') ? 'AI Generated Image (Base64)' : formData.image}
                   onChange={e => setFormData({ ...formData, image: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-orange-500 outline-none text-xs" 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 mt-2 focus:ring-2 focus:ring-orange-500 outline-none text-[10px]" 
                 />
               </div>
 

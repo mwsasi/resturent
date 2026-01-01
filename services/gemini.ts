@@ -16,6 +16,39 @@ export async function getChefRecommendation(menuItems: string[]): Promise<string
   }
 }
 
+export async function generateDishImage(itemName: string, description: string): Promise<string | null> {
+  try {
+    const prompt = `A professional, high-end commercial food photograph of ${itemName}. ${description}. 
+    Soft studio lighting, shallow depth of field, plated beautifully on a ceramic dish, 4k resolution, appetizing.`;
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            text: prompt,
+          },
+        ],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "4:3"
+        }
+      }
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Image Generation Error:", error);
+    return null;
+  }
+}
+
 export async function analyzeTrafficPatterns(orderHistory: any[]) {
   try {
     const summary = orderHistory.map(o => ({

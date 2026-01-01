@@ -7,7 +7,7 @@ export const INITIAL_MENU: MenuItem[] = [
     name: 'Idly',
     price: 40,
     category: 'Breakfast',
-    image: 'https://picsum.photos/seed/idly/400/300',
+    image: '',
     description: 'Soft and fluffy steamed rice cakes served with sambar and chutney.'
   },
   {
@@ -15,7 +15,7 @@ export const INITIAL_MENU: MenuItem[] = [
     name: 'Puttu',
     price: 60,
     category: 'Breakfast',
-    image: 'https://picsum.photos/seed/puttu/400/300',
+    image: '',
     description: 'Steamed cylinders of ground rice layered with coconut.'
   },
   {
@@ -23,7 +23,7 @@ export const INITIAL_MENU: MenuItem[] = [
     name: 'Poori',
     price: 50,
     category: 'Breakfast',
-    image: 'https://picsum.photos/seed/poori/400/300',
+    image: '',
     description: 'Deep-fried bread served with potato masala.'
   },
   {
@@ -31,7 +31,7 @@ export const INITIAL_MENU: MenuItem[] = [
     name: 'Filter Coffee',
     price: 25,
     category: 'Beverage',
-    image: 'https://picsum.photos/seed/coffee/400/300',
+    image: '',
     description: 'Traditional south Indian aromatic filter coffee.'
   },
   {
@@ -39,7 +39,7 @@ export const INITIAL_MENU: MenuItem[] = [
     name: 'Plain Dosa',
     price: 70,
     category: 'Breakfast',
-    image: 'https://picsum.photos/seed/dosa/400/300',
+    image: '',
     description: 'Crispy thin pancake made from fermented rice batter.'
   },
   {
@@ -47,7 +47,7 @@ export const INITIAL_MENU: MenuItem[] = [
     name: 'Medu Vada',
     price: 45,
     category: 'Breakfast',
-    image: 'https://picsum.photos/seed/vada/400/300',
+    image: '',
     description: 'Savory fried donut-shaped fritters made from urad dal.'
   }
 ];
