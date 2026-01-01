@@ -1,6 +1,6 @@
 {
-  "name": "SpiceRoute POS & Restaurant Manager",
-  "description": "A comprehensive restaurant management system featuring a high-performance POS, menu CRUD operations, QR payments, bill printing, and monthly sales analytics.",
+  "name": "Supreme Food Court POS",
+  "description": "High-performance restaurant management system for Supreme Food Court featuring compact mobile-first POS and analytics.",
   "requestFramePermissions": [
     "camera"
   ]

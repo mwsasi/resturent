@@ -10,21 +10,21 @@ import Header from './components/Header';
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('pos');
   const [menu, setMenu] = useState<MenuItem[]>(() => {
-    const saved = localStorage.getItem('spice_route_menu');
+    const saved = localStorage.getItem('supreme_fc_menu');
     return saved ? JSON.parse(saved) : INITIAL_MENU;
   });
   const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('spice_route_orders');
+    const saved = localStorage.getItem('supreme_fc_orders');
     return saved ? JSON.parse(saved) : [];
   });
   const [cart, setCart] = useState<CartItem[]>([]);
 
   useEffect(() => {
-    localStorage.setItem('spice_route_menu', JSON.stringify(menu));
+    localStorage.setItem('supreme_fc_menu', JSON.stringify(menu));
   }, [menu]);
 
   useEffect(() => {
-    localStorage.setItem('spice_route_orders', JSON.stringify(orders));
+    localStorage.setItem('supreme_fc_orders', JSON.stringify(orders));
   }, [orders]);
 
   const updateInventory = (itemsToDecrement: CartItem[]) => {
@@ -52,8 +52,6 @@ const App: React.FC = () => {
   };
 
   const addToCart = (item: MenuItem, variation?: ItemVariation) => {
-    // Unique ID for cart item combines dish ID and variation ID
-    const cartKey = variation ? `${item.id}-${variation.id}` : item.id;
     const existingInCart = cart.find(i => 
       variation 
         ? (i.id === item.id && i.selectedVariation?.id === variation.id)
@@ -64,7 +62,7 @@ const App: React.FC = () => {
     const availableStock = variation ? variation.stock : item.stock;
     
     if (currentQtyInCart >= availableStock) {
-      alert(`Sorry, stock limit reached for ${item.name}${variation ? ` (${variation.label})` : ''}.`);
+      alert(`Stock limit reached for ${item.name}.`);
       return;
     }
 
@@ -82,8 +80,7 @@ const App: React.FC = () => {
   };
 
   const removeFromCart = (cartKey: string) => {
-    setCart(prev => prev.filter((_, idx) => {
-      const item = prev[idx];
+    setCart(prev => prev.filter(item => {
       const currentKey = item.selectedVariation ? `${item.id}-${item.selectedVariation.id}` : item.id;
       return currentKey !== cartKey;
     }));
@@ -95,11 +92,7 @@ const App: React.FC = () => {
       if (currentKey === cartKey) {
         const menuItem = menu.find(m => m.id === i.id);
         const availableStock = i.selectedVariation ? i.selectedVariation.stock : (menuItem?.stock || 0);
-        
-        if (delta > 0 && i.quantity >= availableStock) {
-          alert(`Stock limit reached.`);
-          return i;
-        }
+        if (delta > 0 && i.quantity >= availableStock) return i;
         return { ...i, quantity: Math.max(1, i.quantity + delta) };
       }
       return i;
@@ -110,12 +103,10 @@ const App: React.FC = () => {
 
   const completeOrder = (type: 'dine-in' | 'takeaway', tableNumber?: string) => {
     if (cart.length === 0) return;
-    
     const subtotal = cart.reduce((acc, item) => {
       const price = item.selectedVariation ? item.selectedVariation.price : item.price;
       return acc + (price * item.quantity);
     }, 0);
-    
     const newOrder: Order = {
       id: `ORD-${Date.now()}`,
       items: [...cart],
@@ -127,7 +118,6 @@ const App: React.FC = () => {
       type: type,
       tableNumber: tableNumber
     };
-
     updateInventory(cart);
     setOrders(prev => [newOrder, ...prev]);
     clearCart();
@@ -136,18 +126,15 @@ const App: React.FC = () => {
 
   const appendItemsToOrder = (orderId: string) => {
     if (cart.length === 0) return;
-
     setOrders(prev => prev.map(order => {
       if (order.id === orderId) {
         const updatedItems = [...order.items];
-        
         cart.forEach(newItem => {
           const existingIndex = updatedItems.findIndex(i => 
             newItem.selectedVariation 
               ? (i.id === newItem.id && i.selectedVariation?.id === newItem.selectedVariation.id)
               : (i.id === newItem.id && !i.selectedVariation)
           );
-          
           if (existingIndex > -1) {
             updatedItems[existingIndex] = {
               ...updatedItems[existingIndex],
@@ -157,22 +144,14 @@ const App: React.FC = () => {
             updatedItems.push({ ...newItem });
           }
         });
-
         const newSubtotal = updatedItems.reduce((acc, i) => {
           const price = i.selectedVariation ? i.selectedVariation.price : i.price;
           return acc + (price * i.quantity);
         }, 0);
-        
-        return {
-          ...order,
-          items: updatedItems,
-          total: newSubtotal,
-          grandTotal: newSubtotal
-        };
+        return { ...order, items: updatedItems, total: newSubtotal, grandTotal: newSubtotal };
       }
       return order;
     }));
-    
     updateInventory(cart);
     clearCart();
     return orders.find(o => o.id === orderId);
@@ -184,37 +163,25 @@ const App: React.FC = () => {
     ));
   };
 
-  const updateMenu = (newMenu: MenuItem[]) => setMenu(newMenu);
-
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       <Header currentView={view} setView={setView} />
-      
-      <main className="flex-1 overflow-hidden bg-slate-50">
+      <main className="flex-1 overflow-hidden bg-slate-100">
         {view === 'pos' && (
           <POSView 
-            menu={menu} 
-            cart={cart}
-            orders={orders}
-            addToCart={addToCart} 
-            updateQuantity={updateQuantity}
-            removeFromCart={removeFromCart}
-            clearCart={clearCart}
-            completeOrder={completeOrder}
-            appendItemsToOrder={appendItemsToOrder}
+            menu={menu} cart={cart} orders={orders}
+            addToCart={addToCart} updateQuantity={updateQuantity}
+            removeFromCart={removeFromCart} clearCart={clearCart}
+            completeOrder={completeOrder} appendItemsToOrder={appendItemsToOrder}
             updateOrderStatus={updateOrderStatus}
           />
         )}
-        {view === 'admin' && (
-          <AdminView menu={menu} setMenu={updateMenu} />
-        )}
-        {view === 'reports' && (
-          <ReportsView orders={orders} />
-        )}
+        {view === 'admin' && <AdminView menu={menu} setMenu={setMenu} />}
+        {view === 'reports' && <ReportsView orders={orders} />}
       </main>
-
-      <footer className="bg-white border-t py-2 px-4 text-center text-xs text-slate-400 no-print">
-        &copy; 2024 SpiceRoute Restaurant Management. v1.0.0
+      <footer className="bg-white border-t py-1 px-4 text-center text-[10px] text-slate-400 no-print flex items-center justify-center gap-2">
+        <span className="font-bold">SUPREME FOOD COURT</span>
+        <span className="opacity-50">v2.0.0 (Mobile Optimized)</span>
       </footer>
     </div>
   );
