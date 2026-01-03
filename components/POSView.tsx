@@ -7,7 +7,7 @@ interface POSViewProps {
   menu: MenuItem[];
   cart: CartItem[];
   orders: Order[];
-  addToCart: (item: MenuItem, variation?: ItemVariation) => void;
+  addToCart: (item: MenuItem, variation?: ItemVariation, quantity?: number) => void;
   updateQuantity: (cartKey: string, delta: number) => void;
   removeFromCart: (cartKey: string) => void;
   clearCart: () => void;
@@ -27,7 +27,11 @@ const POSView: React.FC<POSViewProps> = ({
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [settlingOrderId, setSettlingOrderId] = useState<string | null>(null);
   const [showCartMobile, setShowCartMobile] = useState(false);
+  
+  // Selection Logic
   const [selectingItem, setSelectingItem] = useState<MenuItem | null>(null);
+  const [selectionQty, setSelectionQty] = useState(1);
+  const [selectedVar, setSelectedVar] = useState<ItemVariation | undefined>(undefined);
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -72,6 +76,33 @@ const POSView: React.FC<POSViewProps> = ({
     setShowCartMobile(false);
   };
 
+  const startSelection = (item: MenuItem) => {
+    setSelectingItem(item);
+    setSelectionQty(1);
+    setSelectedVar(undefined);
+  };
+
+  const confirmSelection = () => {
+    if (!selectingItem) return;
+    addToCart(selectingItem, selectedVar, selectionQty);
+    setSelectingItem(null);
+  };
+
+  const CashIcon = () => (
+    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+    </svg>
+  );
+
+  const QRIcon = () => (
+    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM13 13h2v2h-2v-2zm2 2h2v2h-2v-2zm2-2h2v2h-2v-2zm2 2h2v2h-2v-2zm-2 2h2v2h-2v-2zm0-4h2v2h-2v-2zm-2 2h2v2h-2v-2zm0 2h2v2h-2v-2z"/>
+    </svg>
+  );
+
+  const itemUnitPrice = selectedVar ? selectedVar.price : (selectingItem?.price || 0);
+  const selectionTotal = itemUnitPrice * selectionQty;
+
   return (
     <div className="h-full flex flex-col md:flex-row overflow-hidden relative bg-slate-100">
       
@@ -93,7 +124,7 @@ const POSView: React.FC<POSViewProps> = ({
           </button>
         </div>
 
-        {/* Scrollable Area - Added bottom padding for mobile bar */}
+        {/* Scrollable Area */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 pb-24 md:pb-2 custom-scrollbar relative">
           {activeTab === 'menu' ? (
             <div className="space-y-2">
@@ -112,8 +143,8 @@ const POSView: React.FC<POSViewProps> = ({
                   return (
                     <div 
                       key={item.id} 
-                      onClick={() => !outOfStock && (hasVariations ? setSelectingItem(item) : addToCart(item))}
-                      className={`bg-white rounded-xl border-2 border-slate-200 overflow-hidden flex flex-col transition-all active:scale-95 ${outOfStock ? 'opacity-40 grayscale' : 'hover:border-orange-500'}`}
+                      onClick={() => !outOfStock && startSelection(item)}
+                      className={`bg-white rounded-xl border-2 border-slate-200 overflow-hidden flex flex-col transition-all active:scale-95 ${outOfStock ? 'opacity-40 grayscale pointer-events-none' : 'hover:border-orange-500 cursor-pointer'}`}
                     >
                       <div className="h-20 bg-slate-50 relative shrink-0">
                         {item.image ? (
@@ -122,10 +153,9 @@ const POSView: React.FC<POSViewProps> = ({
                           <div className="w-full h-full flex items-center justify-center text-slate-200 font-black text-3xl">{item.name[0]}</div>
                         )}
                         <div className="absolute top-1 right-1 flex flex-col gap-1 items-end">
-                          <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[11px] font-black shadow-lg">Rs{hasVariations ? Math.min(...item.variations!.map(v => v.price)) : item.price}</span>
+                          <span className="bg-slate-900 text-white px-2 py-0.5 rounded-lg text-[11px] font-black shadow-lg">Rs{hasVariations ? `${Math.min(...item.variations!.map(v => v.price))}+` : item.price}</span>
                           {item.piecesPerSet && item.piecesPerSet > 1 && <span className="bg-orange-600 text-white px-1.5 rounded-md text-[7px] font-black uppercase">SET OF {item.piecesPerSet}</span>}
                         </div>
-                        {/* Stock Balance Badge */}
                         <div className={`absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase shadow-sm ${totalStock <= 5 ? 'bg-red-600 text-white' : 'bg-white/90 text-slate-900 border'}`}>
                           Stock: {totalStock}
                         </div>
@@ -143,15 +173,23 @@ const POSView: React.FC<POSViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {pendingOrders.map(order => (
                 <div key={order.id} className="bg-white rounded-xl border-2 border-slate-200 p-3 relative flex flex-col gap-2">
-                   <div className={`absolute top-0 right-0 px-2 py-1 text-[7px] font-black uppercase text-white rounded-bl-lg flex items-center gap-1 ${order.type === 'dine-in' ? 'bg-green-600' : 'bg-red-600'}`}>
+                   <div className={`absolute top-0 right-0 px-2 py-1 text-[7px] font-black uppercase text-white rounded-bl-lg flex items-center gap-1.5 ${order.type === 'dine-in' ? 'bg-green-600' : 'bg-red-600'}`}>
                      {order.type === 'dine-in' ? (
-                       <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><circle cx="12" cy="12" r="5"/></svg>
+                       <svg className="w-2.1 h-2.1" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><circle cx="12" cy="12" r="5"/></svg>
                      ) : (
-                       <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8-2h4v2h-4V4zM4 19V8h16v11H4z"/></svg>
+                       <svg className="w-2.1 h-2.1" fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-8-2h4v2h-4V4zM4 19V8h16v11H4z"/></svg>
                      )}
                      {order.type} {order.tableNumber && `#${order.tableNumber}`}
                    </div>
-                   <div className="pt-2">
+                   
+                   {order.paymentMethod && (
+                     <div className={`absolute top-0 left-0 px-2 py-1 text-[7px] font-black uppercase text-white rounded-br-lg flex items-center gap-1.5 ${order.paymentMethod === 'cash' ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
+                       {order.paymentMethod === 'cash' ? <CashIcon /> : <QRIcon />}
+                       {order.paymentMethod}
+                     </div>
+                   )}
+
+                   <div className="pt-3">
                       <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{new Date(order.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} • {order.id.slice(-4)}</p>
                       <div className="mt-1.5 space-y-1">
                         {order.items.map((it, idx) => (
@@ -211,7 +249,7 @@ const POSView: React.FC<POSViewProps> = ({
         </button>
       </div>
 
-      {/* Mobile Cart Overlay (Slides UP from bottom) */}
+      {/* Mobile Cart Overlay */}
       <div className={`
         fixed inset-0 z-[45] bg-slate-900/80 backdrop-blur-sm transition-opacity md:hidden ${showCartMobile ? 'opacity-100' : 'opacity-0 pointer-events-none'}
       `} onClick={() => setShowCartMobile(false)} />
@@ -221,7 +259,6 @@ const POSView: React.FC<POSViewProps> = ({
         ${showCartMobile ? 'translate-y-0' : 'translate-y-full md:translate-y-0'}
         rounded-t-[2.5rem] md:rounded-none overflow-hidden
       `}>
-        {/* Grabber Handle for mobile */}
         <div className="md:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
 
         <div className="p-4 pt-2 border-b flex items-center justify-between bg-slate-50/50">
@@ -266,7 +303,6 @@ const POSView: React.FC<POSViewProps> = ({
         </div>
 
         <div className="p-6 bg-slate-50 border-t pb-24 md:pb-6">
-          {/* Enhanced Order Type Selection */}
           <div className="grid grid-cols-2 gap-4 mb-6">
              <button 
                onClick={() => setOrderType('dine-in')} 
@@ -311,27 +347,94 @@ const POSView: React.FC<POSViewProps> = ({
         </div>
       </div>
 
-      {/* Select Variation Modal */}
+      {/* Select Quantity & Variation Modal */}
       {selectingItem && (
-        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[110] flex items-end md:items-center md:justify-center p-4">
-          <div className="bg-white w-full md:max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-20">
-             <h3 className="text-lg font-black text-slate-900 mb-1 uppercase tracking-tighter">{selectingItem.name}</h3>
-             <p className="text-[9px] text-slate-400 uppercase tracking-widest mb-6">Choose Portions</p>
-             <div className="space-y-2.5 mb-8">
-                {selectingItem.variations?.map(v => (
-                  <button 
-                    key={v.id} onClick={() => { addToCart(selectingItem, v); setSelectingItem(null); }}
-                    className={`w-full flex justify-between items-center p-5 rounded-2xl border-2 transition-all group ${v.stock <= 0 ? 'opacity-30 pointer-events-none' : 'hover:border-orange-500 hover:bg-orange-50 active:scale-95 border-slate-100 bg-slate-50'}`}
-                  >
-                    <div className="text-left">
-                      <span className="block text-[13px] font-black text-slate-800 group-hover:text-orange-700 uppercase tracking-tight">{v.label}</span>
-                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">In Stock: {v.stock}</span>
-                    </div>
-                    <span className="text-[14px] font-black text-orange-600">Rs{v.price}</span>
-                  </button>
-                ))}
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[110] flex items-end md:items-center md:justify-center p-4 overflow-y-auto">
+          <div className="bg-white w-full md:max-w-[420px] rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-20 max-h-[90vh] flex flex-col">
+             <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                  {selectingItem.image ? <img src={selectingItem.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center font-black text-slate-400">{selectingItem.name[0]}</div>}
+                </div>
+                <div>
+                   <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter leading-tight">{selectingItem.name}</h3>
+                   <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">{selectingItem.category} • Set of {selectingItem.piecesPerSet || 1}</p>
+                </div>
              </div>
-             <button onClick={() => setSelectingItem(null)} className="w-full text-[10px] font-black uppercase text-slate-400 py-2 tracking-widest">Cancel selection</button>
+
+             <div className="flex-1 overflow-y-auto custom-scrollbar space-y-8 pr-2">
+                {selectingItem.variations && selectingItem.variations.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Choose Variation</label>
+                    <div className="grid grid-cols-2 gap-2">
+                       {selectingItem.variations.map(v => (
+                         <button 
+                           key={v.id} 
+                           onClick={() => setSelectedVar(v)}
+                           disabled={v.stock <= 0}
+                           className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-start gap-1 relative overflow-hidden ${selectedVar?.id === v.id ? 'bg-orange-50 border-orange-600 ring-2 ring-orange-200' : 'bg-white border-slate-100'} ${v.stock <= 0 ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:border-orange-300'}`}
+                         >
+                           <span className={`text-[11px] font-black uppercase tracking-tight ${selectedVar?.id === v.id ? 'text-orange-700' : 'text-slate-800'}`}>{v.label}</span>
+                           <span className={`text-[12px] font-black ${selectedVar?.id === v.id ? 'text-orange-600' : 'text-slate-400'}`}>Rs{v.price}</span>
+                           {v.stock <= 5 && v.stock > 0 && <span className="absolute top-1 right-2 text-[6px] font-black uppercase text-red-500">Low Stock</span>}
+                         </button>
+                       ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">Input Quantity</label>
+                   <div className="flex items-center justify-between bg-slate-100 p-3 rounded-3xl">
+                      <button 
+                        onClick={() => setSelectionQty(Math.max(1, selectionQty - 1))}
+                        className="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-xl font-black active:scale-90 transition-transform text-slate-900 border"
+                      >
+                        －
+                      </button>
+                      <input 
+                        type="number" 
+                        value={selectionQty} 
+                        onChange={(e) => setSelectionQty(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-20 bg-transparent text-center text-3xl font-black text-slate-900 outline-none"
+                      />
+                      <button 
+                        onClick={() => setSelectionQty(selectionQty + 1)}
+                        className="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-xl font-black active:scale-90 transition-transform text-slate-900 border"
+                      >
+                        ＋
+                      </button>
+                   </div>
+                </div>
+             </div>
+
+             <div className="mt-8 pt-6 border-t space-y-4">
+                <div className="flex justify-between items-end">
+                   <div className="text-left">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Total Amount</p>
+                      <p className="text-2xl font-black text-slate-900 tracking-tighter">Rs{selectionTotal}</p>
+                   </div>
+                   <div className="text-right">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Subtotal</p>
+                      <p className="text-[12px] font-black text-orange-600 uppercase tracking-widest">Rs{itemUnitPrice} × {selectionQty}</p>
+                   </div>
+                </div>
+                
+                <div className="flex gap-2">
+                   <button 
+                    onClick={() => setSelectingItem(null)}
+                    className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 text-[11px] font-black uppercase tracking-widest"
+                   >
+                     Discard
+                   </button>
+                   <button 
+                    disabled={selectingItem.variations && selectingItem.variations.length > 0 && !selectedVar}
+                    onClick={confirmSelection}
+                    className="flex-[2] py-4 rounded-2xl bg-orange-600 text-white text-[11px] font-black uppercase tracking-widest shadow-xl shadow-orange-100 disabled:opacity-30 disabled:grayscale transition-all active:scale-95"
+                   >
+                     Add to Cart
+                   </button>
+                </div>
+             </div>
           </div>
         </div>
       )}
@@ -346,8 +449,18 @@ const POSView: React.FC<POSViewProps> = ({
              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Checkout Bill</p>
              <h3 className="text-3xl font-black text-slate-900 mb-8 tracking-tighter">Rs{orders.find(o => o.id === settlingOrderId)?.grandTotal}</h3>
              <div className="grid grid-cols-1 gap-4 mb-8">
-                <button onClick={() => { updateOrderStatus(settlingOrderId, 'delivered', 'qr'); setSettlingOrderId(null); }} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-2xl shadow-orange-200 transition-transform active:scale-95">Online / QR Scan</button>
-                <button onClick={() => { updateOrderStatus(settlingOrderId, 'delivered', 'cash'); setSettlingOrderId(null); }} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-transform active:scale-95">Cash Settlement</button>
+                <button 
+                  onClick={() => { updateOrderStatus(settlingOrderId, 'delivered', 'qr'); setSettlingOrderId(null); }} 
+                  className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-2xl shadow-orange-200 transition-transform active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <QRIcon /> Online / QR Scan
+                </button>
+                <button 
+                  onClick={() => { updateOrderStatus(settlingOrderId, 'delivered', 'cash'); setSettlingOrderId(null); }} 
+                  className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-transform active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <CashIcon /> Cash Settlement
+                </button>
              </div>
              <button onClick={() => setSettlingOrderId(null)} className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Return to Menu</button>
           </div>
